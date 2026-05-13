@@ -1,5 +1,6 @@
 require 'notion-ruby-client'
 
+puts "目前的 Token 長度是: #{ENV['NOTION_TOKEN']&.length || '空值'}"
 # 1. 初始化 Client
 client = Notion::Client.new(token: ENV['NOTION_TOKEN'])
 
