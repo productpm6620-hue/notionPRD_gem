@@ -1,22 +1,49 @@
 require 'notion-ruby-client'
 
-# 從雲端環境變數讀取 Token，保護隱私
+# 1. 初始化 Client
 client = Notion::Client.new(token: ENV['NOTION_TOKEN'])
-db_id = '35f1255b6a7880229827fb18f0241dab'
+
+# 2. 你的頁面 ID (確認不帶連字號)
+page_id = '35f1255b6a7880229827fb18f0241dab'
 
 begin
-  db = client.database(database_id: db_id)
-  puts "成功連線至：#{db.title[0].plain_text}"
+  # 第一步：獲取頁面標題
+  page_info = client.page(page_id: page_id)
+  # 注意：頁面標題的提取路徑與資料庫不同
+  title = page_info.properties['title']&.title&.first&.plain_text || "未命名頁面代碼"
+  puts "✅ 已成功讀取文件：#{title}"
+  puts "="*30
+
+  # 第二步：抓取頁面內的「所有積木內容」
+  # block_children 會回傳頁面內所有的段落、標題、清單等
+  blocks = client.block_children(block_id: page_id)
+
+  full_content = ""
+  puts "--- 文件內容摘要 ---"
   
-  # 抓取前 5 筆 PRD 內容作為 AI 的素材
-  response = client.database_query(database_id: db_id, page_size: 5)
-  
-  puts "\n--- 準備交給 Gemini 的 PRD 素材 ---"
-  response.results.each do |page|
-    name = page.properties['名稱']&.title&.first&.plain_text || "未命名"
-    status = page.properties['狀態']&.select&.name || "無狀態"
-    puts "需求: #{name} | 目前狀態: #{status}"
+  blocks.results.each do |block|
+    case block.type
+    when 'paragraph'
+      text = block.paragraph.rich_text.map(&:plain_text).join
+      full_content += "#{text}\n" if text.any?
+      puts "[段落] #{text}" if text != ""
+    when 'heading_1', 'heading_2', 'heading_3'
+      level = block.type.split('_').last
+      text = block.send(block.type).rich_text.map(&:plain_text).join
+      full_content += "#" * level.to_i + " #{text}\n"
+      puts "[標題#{level}] #{text}"
+    when 'bulleted_list_item'
+      text = block.bulleted_list_item.rich_text.map(&:plain_text).join
+      full_content += "- #{text}\n"
+      puts "[列表] #{text}"
+    end
   end
+
+  # 如果你想把整份內容存起來交給 AI
+  if full_content.empty?
+    puts "⚠️ 警告：讀取到了頁面，但沒有發現可讀取的文字塊。請確認頁面內是否有輸入內容。"
+  end
+
 rescue => e
-  puts "錯誤：#{e.message}"
+  puts "❌ 讀取失敗：#{e.message}"
 end
